@@ -9,7 +9,7 @@ import DiscordKit
 import SwiftUI
 
 @main
-struct SwiftcordApp: App, Equatable {
+struct SwiftcordApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	let persistenceController = PersistenceController.shared
 	@StateObject var updaterViewModel = UpdaterViewModel()
@@ -20,11 +20,13 @@ struct SwiftcordApp: App, Equatable {
 	var body: some Scene {
 		WindowGroup {
 			ContentView()
-				.preferredColorScheme(gateway.cache.userSettings?.theme == UITheme.light ? .light : .dark)
+				.preferredColorScheme(gateway.store.currentUserState.userSettings?.theme == UITheme.light ? .light : .dark)
 				.overlay(LoadingView())
-				.environmentObject(gateway)
+				.environmentObject(gateway.store.channelStore)
+				.environmentObject(gateway.store.userStore)
+				.environmentObject(gateway.store.guildStore)
+				.environmentObject(gateway.store.currentUserState)
 				.environmentObject(state)
-				// .environment(\.locale, .init(identifier: "zh-Hans"))
 				.environment(\.managedObjectContext, persistenceController.container.viewContext)
 		}
 		.commands {
@@ -38,14 +40,10 @@ struct SwiftcordApp: App, Equatable {
 
 		Settings {
 			SettingsView()
-				.preferredColorScheme(gateway.cache.userSettings?.theme == .light ? .light : .dark)
+				.preferredColorScheme(gateway.store.currentUserState.userSettings?.theme == UITheme.light ? .light : .dark)
 				.environmentObject(gateway)
 				.environmentObject(state)
 				// .environment(\.locale, .init(identifier: "zh-Hans"))
 		}
-	}
-
-	static func == (lhs: SwiftcordApp, rhs: SwiftcordApp) -> Bool {
-		lhs.gateway == rhs.gateway && lhs.state == rhs.state
 	}
 }

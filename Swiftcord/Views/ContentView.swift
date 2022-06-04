@@ -26,122 +26,41 @@ struct ContentView: View {
     private var items: FetchedResults<MessageItem>*/
 
     @State private var sheetOpen = false
-    @State private var selectedGuildID: Snowflake?
-    @State private var loadingGuildID: Snowflake?
+	@State private var selectedPage: SelectedPage = .home
 
     @StateObject var loginWVModel: WebViewModel = WebViewModel(link: "https://canary.discord.com/login")
     @StateObject private var audioManager = AudioCenterManager()
 
     @EnvironmentObject var gateway: DiscordGateway
     @EnvironmentObject var state: UIState
+	@EnvironmentObject var guildStore: GuildStore
 
     private let log = Logger(category: "ContentView")
 
-	private func makeDMGuild() -> Guild {
-		return Guild(id: "@me",
-					 name: "DMs",
-					 owner_id: "",
-					 afk_timeout: 0,
-					 verification_level: .none,
-					 default_message_notifications: .all,
-					 explicit_content_filter: .disabled,
-					 roles: [], emojis: [], features: [],
-					 mfa_level: .none,
-					 system_channel_flags: 0,
-					 channels: gateway.cache.dms,
-					 premium_tier: .none,
-					 preferred_locale: .englishUS,
-					 nsfw_level: .default,
-					 premium_progress_bar_enabled: false)
-	}
-
 	private func loadLastSelectedGuild() {
-		if let lGID = UserDefaults.standard.string(forKey: "lastSelectedGuild"),
-		   gateway.cache.guilds[lGID] != nil || lGID == "@me" {
-			selectedGuildID = lGID
-		} else { selectedGuildID = "@me" }
+		if let guildId = UserDefaults.standard.string(forKey: "lastSelectedGuild"),
+		   guildStore.guilds[guildId] != nil {
+			selectedPage = .guild(id: guildId)
+		}
 	}
 
     var body: some View {
         HStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 8) {
-                    ServerButton(
-                        selected: selectedGuildID == "@me",
-                        name: "Home",
-                        assetIconName: "DiscordIcon",
-                        onSelect: { selectedGuildID = "@me" }
-                    ).padding(.top, 4)
-
-                    CustomHorizontalDivider().frame(width: 32, height: 1)
-
-					ForEach(
-						(gateway.cache.guilds.values.filter({
-							!(gateway.cache.userSettings?.guild_positions ?? []).contains($0.id)
-						}).sorted(by: { lhs, rhs in lhs.joined_at! > rhs.joined_at! }))
-						+ (gateway.cache.userSettings?.guild_positions ?? [])
-							.compactMap({ gateway.cache.guilds[$0] })
-					) { guild in
-                        ServerButton(
-                            selected: selectedGuildID == guild.id || loadingGuildID == guild.id,
-                            name: guild.name,
-                            serverIconURL: guild.icon != nil ? "\(GatewayConfig.default.cdnURL)icons/\(guild.id)/\(guild.icon!).webp?size=240" : nil,
-                            isLoading: loadingGuildID == guild.id,
-                            onSelect: { selectedGuildID = guild.id }
-                        )
-                    }
-
-                    ServerButton(
-                        selected: false,
-                        name: "Add a Server",
-                        systemIconName: "plus",
-                        bgColor: .green,
-                        noIndicator: true,
-                        onSelect: {}
-					).padding(.bottom, 4)
-                }
-                .padding(.bottom, 8)
-                .frame(width: 72)
-            }
-			.background(
-				List {}
-					.listStyle(.sidebar)
-					.overlay(
-						Rectangle()
-							.frame(width: 1, alignment: .bottom)
-							.foregroundColor(Color(nsColor: .separatorColor))
-							.padding(.top, -13),
-						alignment: .trailing
+            ServerList(selectedPage: $selectedPage)
+			switch selectedPage {
+			case .home:
+				Text("Home Page")
+			case .guild(let id):
+				if let guild = guildStore.guilds[id] {
+					ServerView(
+						guildState: guild
 					)
-					.overlay(.black.opacity(0.2))
-			)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .safeAreaInset(edge: .top) {
-                List {}
-					.listStyle(.sidebar)
-					.frame(width: 72, height: 0)
-                    .offset(y: -13)
-					.overlay(
-						Rectangle()
-							.frame(height: 1, alignment: .bottom)
-							.foregroundColor(Color(nsColor: .separatorColor)),
-						alignment: .top
-					)
-            }
-
-			// Using the .equatable() modifier on this View causes a swift-frontend
-			// bus error when compiling for release. I have no idea why that happens.
-			ServerView(
-				guild: selectedGuildID == nil
-				? nil
-				: (selectedGuildID == "@me" ? makeDMGuild() : gateway.cache.guilds[selectedGuildID!])
-			)
+				} else {
+					Text("Guild isn't loaded :(")
+				}
+			}
         }
         .environmentObject(audioManager)
-        .onChange(of: selectedGuildID) { id in
-            guard let id = id else { return }
-			UserDefaults.standard.set(id.description, forKey: "lastSelectedGuild")
-        }
         .onChange(of: state.loadingState, perform: { state in
 			if state == .gatewayConn { loadLastSelectedGuild() }
         })

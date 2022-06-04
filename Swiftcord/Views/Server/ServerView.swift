@@ -15,51 +15,18 @@ class ServerContext: ObservableObject {
 	@Published public var roles: [Role] = []
 }
 
-struct ServerView: View, Equatable {
-	let guild: Guild?
+struct ServerView: View {
+	@ObservedObject var guildState: GuildState
     @State private var evtID: EventDispatch.HandlerIdentifier?
     @State private var mediaCenterOpen: Bool = false
-
+	@State private var selectedChannelId: Snowflake?
+	
+	@EnvironmentObject var channelStore: ChannelStore
     @EnvironmentObject var state: UIState
     @EnvironmentObject var gateway: DiscordGateway
     @EnvironmentObject var audioManager: AudioCenterManager
 
     @StateObject private var serverCtx = ServerContext()
-
-	private func loadChannels() {
-		guard let channels = serverCtx.guild?.channels?.discordSorted()
-		else { return }
-
-		if let lastChannel = UserDefaults.standard.string(forKey: "lastCh.\(serverCtx.guild!.id)"),
-		   let lastChObj = channels.first(where: { $0.id == lastChannel }) {
-			   serverCtx.channel = lastChObj
-			   return
-        }
-        let selectableChs = channels.filter { $0.type != .category }
-		serverCtx.channel = selectableChs.first
-
-		if serverCtx.channel == nil { state.loadingState = .messageLoad }
-		// Prevent deadlocking if there are no DMs/channels
-    }
-
-	private func bootstrapGuild(with guild: Guild) {
-		serverCtx.guild = guild
-		serverCtx.roles = []
-		loadChannels()
-		// Sending malformed IDs causes an instant Gateway session termination
-		guard !guild.isDMChannel else { return }
-
-		// Subscribe to typing events
-		gateway.socket.send(
-			op: .subscribeGuildEvents,
-			data: SubscribeGuildEvts(guild_id: guild.id, typing: true)
-		)
-		// Retrieve guild roles to update context
-		Task {
-			guard let newRoles = await DiscordAPI.getGuildRoles(id: guild.id) else { return }
-			serverCtx.roles = newRoles
-		}
-	}
 
     private func toggleSidebar() {
         #if os(macOS)
@@ -70,28 +37,22 @@ struct ServerView: View, Equatable {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-				if let guild = guild {
-					ChannelList(channels: guild.channels!, selCh: $serverCtx.channel)
-						.equatable()
-						.toolbar {
-							ToolbarItem {
-								Text(guild.name == "DMs" ? "dm" : "\(guild.name)")
-									.font(.title3)
-									.fontWeight(.semibold)
-									.frame(maxWidth: 208) // Largest width before disappearing
-							}
+				ChannelList(guildId: guildState.guild.id, channelSelection: $selectedChannelId)
+					.toolbar {
+						ToolbarItem {
+							Text(guildState.guild.name == "DMs" ? "dm" : "\(guildState.guild.name)")
+								.font(.title3)
+								.fontWeight(.semibold)
+								.frame(maxWidth: 208) // Largest width before disappearing
 						}
-						.onChange(of: serverCtx.channel?.id) { newID in
-							guard let newID = newID else { return }
-							UserDefaults.standard.setValue(
-								newID,
-								forKey: "lastCh.\(serverCtx.guild!.id)"
-							)
-						}
-				} else {
-					ZStack {}
-						.frame(minWidth: 240, maxHeight: .infinity)
-				}
+					}
+					.onChange(of: $selectedChannelId) { newID in
+						guard let newID = newID else { return }
+						UserDefaults.standard.setValue(
+							newID,
+							forKey: "lastCh.\(serverCtx.guild!.id)"
+						)
+					}
 
                 if !gateway.connected || !gateway.reachable {
 					Label(gateway.reachable
@@ -102,7 +63,7 @@ struct ServerView: View, Equatable {
 						.padding(.vertical, 4)
 						.background(gateway.reachable ? .orange : .red)
                 }
-				if let user = gateway.cache.user { CurrentUserFooter(user: user) }
+				CurrentUserFooter(user: user)
             }
 
 			if serverCtx.channel != nil {
@@ -145,10 +106,6 @@ struct ServerView: View, Equatable {
         .onChange(of: audioManager.queue.count) { [oldCount = audioManager.queue.count] count in
             if count > oldCount { mediaCenterOpen = true }
         }
-        .onChange(of: guild) { newGuild in
-			guard let newGuild = newGuild else { return }
-			bootstrapGuild(with: newGuild)
-		}
         .onChange(of: state.loadingState) { newState in if newState == .gatewayConn { loadChannels() }}
         .onAppear {
 			if let guild = guild { bootstrapGuild(with: guild) }
@@ -195,8 +152,4 @@ struct ServerView: View, Equatable {
             if let evtID = evtID { _ = gateway.onEvent.removeHandler(handler: evtID) }
         }
     }
-
-	static func == (lhs: Self, rhs: Self) -> Bool {
-		lhs.guild == rhs.guild
-	}
 }

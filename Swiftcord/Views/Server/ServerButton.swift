@@ -16,7 +16,6 @@ struct ServerButton: View {
 	var serverIconURL: String?
 	var bgColor: Color?
 	var noIndicator = false // Don't show capsule
-	var isLoading: Bool = false
 	let onSelect: () -> Void
 	@State private var hovered = false
 
@@ -45,7 +44,6 @@ struct ServerButton: View {
 					systemName: systemIconName,
 					assetName: assetIconName,
 					serverIconURL: serverIconURL,
-					loading: isLoading,
 					hovered: $hovered
 				)
 			)
@@ -67,7 +65,6 @@ struct ServerButtonStyle: ButtonStyle {
     let systemName: String?
     let assetName: String?
     let serverIconURL: String?
-    let loading: Bool
     @Binding var hovered: Bool
 
     func makeBody(configuration: Configuration) -> some View {

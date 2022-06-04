@@ -11,22 +11,22 @@ import CachedAsyncImage
 
 struct ChannelButton: View {
     let channel: Channel
-    @Binding var selectedCh: Channel?
+    @Binding var selectedChannelId: Snowflake?
 
     var body: some View {
 		if channel.type == .dm || channel.type == .groupDM {
-			DMButton(dm: channel, selectedCh: $selectedCh)
-				.buttonStyle(DiscordChannelButton(isSelected: selectedCh?.id == channel.id))
+			DMButton(dm: channel, selectedCh: $selectedChannelId)
+				.buttonStyle(DiscordChannelButton(isSelected: selectedChannelId == channel.id))
 		} else {
-			GuildChButton(channel: channel, selectedCh: $selectedCh)
-				.buttonStyle(DiscordChannelButton(isSelected: selectedCh?.id == channel.id))
+			GuildChButton(channel: channel, selectedCh: $selectedChannelId)
+				.buttonStyle(DiscordChannelButton(isSelected: selectedChannelId == channel.id))
 		}
     }
 }
 
 struct GuildChButton: View {
 	let channel: Channel
-	@Binding var selectedCh: Channel?
+	@Binding var selectedCh: Snowflake?
 
 	@EnvironmentObject var serverCtx: ServerContext
 
@@ -36,7 +36,7 @@ struct GuildChButton: View {
 	]
 
 	var body: some View {
-		Button { selectedCh = channel } label: {
+		Button { selectedCh = channel.id } label: {
 			let image = (serverCtx.guild?.rules_channel_id != nil && serverCtx.guild?.rules_channel_id! == channel.id) ? "newspaper.fill" : (chIcons[channel.type] ?? "number")
 			Label(channel.label() ?? "nil", systemImage: image)
 				.padding(.vertical, 6)
@@ -49,16 +49,17 @@ struct GuildChButton: View {
 struct DMButton: View {
 	// swiftlint:disable identifier_name
 	let dm: Channel
-	@Binding var selectedCh: Channel?
+	@Binding var selectedCh: Snowflake?
+	@EnvironmentObject var userStore: UserStore
 
-	@EnvironmentObject var gateway: DiscordGateway
 
 	var body: some View {
-		Button { selectedCh = dm } label: {
+		Button { selectedCh = dm.id } label: {
 			HStack {
 				if dm.type == .dm,
-				   let avatarURL = gateway.cache.users[dm.recipient_ids![0]]?.avatarURL(size: 64) {
-					CachedAsyncImage(url: avatarURL) { image in
+				   let userId = dm.recipient_ids?.first,
+				   let user = userStore.users[userId] {
+					CachedAsyncImage(url: user.user.avatarURL(size: 64)) { image in
 						image.resizable().scaledToFill()
 					} placeholder: { Rectangle().fill(.gray.opacity(0.2)) }
 					.frame(width: 32, height: 32)
@@ -72,7 +73,7 @@ struct DMButton: View {
 				}
 
 				VStack(alignment: .leading, spacing: 2) {
-					Text(dm.label(gateway.cache.users) ?? "nil")
+					Text(dm.label(userStore.users.mapValues({ $0.user })) ?? "nil")
 					if dm.type == .groupDM {
 						Text("\((dm.recipient_ids?.count ?? 2) + 1) Members").font(.caption)
 					}
